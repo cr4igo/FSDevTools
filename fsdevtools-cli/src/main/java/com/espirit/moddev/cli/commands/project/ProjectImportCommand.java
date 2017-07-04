@@ -26,11 +26,13 @@ public class ProjectImportCommand extends SimpleCommand<SimpleResult<Boolean>>{
 
     @Option(type = OptionType.COMMAND, name = {"-ipn", "--importProjectName"}, description = "Name of the FirstSpirit target project where the import should go")
     private String projectName;
+    @Option(type = OptionType.COMMAND, name = {"-ipd", "--importProjectDescription"}, description = "Description of the FirstSpirit target project")
+    private String projectDescription;
     @Option(type = OptionType.COMMAND, name = {"-pf", "--projectFile"}, description = "Path to the project export file that should be imported")
     private String projectFile;
     @Option(type = OptionType.COMMAND, name = {"-fpa", "--forceProjectActivation"}, description = "Whether to force the project activation if the project is deactivated after import somehow. Default is false.")
     private boolean forceProjectActivation;
-    @Option(type = OptionType.COMMAND, name = {"-dlm", "--databaseLayerMapping"}, description = "Define a map-like layerMapping with comma-separated key-value pairs by : or =;")
+    @Option(type = OptionType.COMMAND, name = {"-dlm", "--databaseLayerMapping"}, description = "Define a map-like layerMapping with comma-separated key-value pairs by : or =; . Use layer names.")
     private String databaseLayerMapping;
 
     @Override
@@ -42,6 +44,7 @@ public class ProjectImportCommand extends SimpleCommand<SimpleResult<Boolean>>{
                 ProjectImportParametersBuilder importParametersBuilder = new ProjectImportParametersBuilder()
                         .setProjectName(projectName)
                         .setProjectFile(projectFile)
+                        .setProjectDescription(projectDescription)
                         .setForceProjectActivation(forceProjectActivation)
                         .setDatabaseLayerMapping(new StringPropertiesMap(databaseLayerMapping));
 

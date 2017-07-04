@@ -105,7 +105,8 @@ public class ProjectImporter {
             if (projectIsPresent) {
                 activeProjectIfNecessary(projectImportParameters, fsProject);
             }
-            return true;
+
+            return projectIsPresent;
         } catch (ExecutionException | IOException e) {
             LOGGER.error("Not able to perform import!", e);
             return false;
@@ -121,10 +122,11 @@ public class ProjectImporter {
                 AdminService adminService = userService.getConnection().getService(AdminService.class);
                 adminService.getProjectStorage().activateProject(fsProject);
             }
-        } else if (!projectIsActive) {
-            throw new ExecutionException("Project with name '"
-                    + projectImportParameters.getProjectName()
-                    + "' seems to be deactivated! To force activation, configure fsForceProjectActivation with true!");
+            if(!fsProject.isActive()) {
+                throw new ExecutionException("Project with name '"
+                        + projectImportParameters.getProjectName()
+                        + "' seems to be deactivated! To force activation, configure fsForceProjectActivation with true!");
+            }
         }
     }
 
