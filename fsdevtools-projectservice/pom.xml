@@ -38,10 +38,6 @@
             <groupId>de.espirit.firstspirit</groupId>
             <artifactId>fs-access</artifactId>
         </dependency>
-        <dependency>
-            <groupId>com.espirit.moddev.fsdevtools</groupId>
-            <artifactId>fsdevtools-cli</artifactId>
-        </dependency>
     </dependencies>
 
 </project>

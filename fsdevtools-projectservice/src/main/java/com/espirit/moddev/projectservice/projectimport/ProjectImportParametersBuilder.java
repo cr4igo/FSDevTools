@@ -41,7 +41,7 @@ public class ProjectImportParametersBuilder {
         return this;
     }
 
-    public ProjectImportParametersBuilder setDatabases(Map<String, String> databases) {
+    public ProjectImportParametersBuilder setDatabaseLayerMapping(Map<String, String> databases) {
         this.databases = databases;
         return this;
     }
@@ -51,7 +51,7 @@ public class ProjectImportParametersBuilder {
         return this;
     }
 
-    public ProjectImportParametersBuilder setFsForceProjectActivation(boolean fsForceProjectActivation) {
+    public ProjectImportParametersBuilder setForceProjectActivation(boolean fsForceProjectActivation) {
         this.fsForceProjectActivation = fsForceProjectActivation;
         return this;
     }

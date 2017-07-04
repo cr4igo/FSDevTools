@@ -44,7 +44,7 @@ public class ProjectImporterTest {
     public void testExceptionWhenNotConnected() throws IOException {
         ServerConnection connectionMock = mock(ServerConnection.class);
         when(connectionMock.isConnected()).thenReturn(false);
-        ProjectImportParameters importParameters = new ProjectImportParametersBuilder().create();
+        ProjectImportParameters importParameters = new ProjectImportParametersBuilder().setProjectName("asd").setProjectFile("asd").create();
         testling.importProject(connectionMock, importParameters);
     }
 

@@ -320,12 +320,22 @@
             </dependency>
             <dependency>
                 <groupId>com.espirit.moddev.fsdevtools</groupId>
+                <artifactId>fsdevtools-cli</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.espirit.moddev.fsdevtools</groupId>
                 <artifactId>fsdevtools-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.espirit.moddev.fsdevtools</groupId>
                 <artifactId>fsdevtools-serverrunner</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.espirit.moddev.fsdevtools</groupId>
+                <artifactId>fsdevtools-projectservice</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

@@ -158,9 +158,8 @@ public class ProjectImporter {
         List<Properties> usedLayers = info.getUsedLayers();
         for (Properties prop : usedLayers) {
             layerMapping.put(
-                    prop.getProperty("name"),
-                    projectImportParameters.getDatabases() != null ? projectImportParameters.getDatabases().get(prop
-                            .getProperty("name")) : null);
+                prop.getProperty("name"),
+                projectImportParameters.getDatabases() != null ? projectImportParameters.getDatabases().get(prop.getProperty("name")) : null);
         }
         return layerMapping;
     }
