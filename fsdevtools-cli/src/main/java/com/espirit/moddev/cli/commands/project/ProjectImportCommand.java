@@ -17,6 +17,8 @@ import de.espirit.firstspirit.io.ServerConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+
 @Command(name = "import", groupNames = {"project"}, description = "Imports a FirstSpirit project export into a FirstSpirit Server as a new project.")
 @Examples(
         examples = {"fs-cli project import -h localhost -p 8000 project import --importProjectName \"newProjectName\" --projectFile \"D:\\my-project-export.tar.gz\""},
@@ -43,7 +45,7 @@ public class ProjectImportCommand extends SimpleCommand<SimpleResult<Boolean>>{
             if(connection instanceof ServerConnection) {
                 ProjectImportParametersBuilder importParametersBuilder = new ProjectImportParametersBuilder()
                         .setProjectName(projectName)
-                        .setProjectFile(projectFile)
+                        .setProjectFile(new File(projectFile))
                         .setProjectDescription(projectDescription)
                         .setForceProjectActivation(forceProjectActivation)
                         .setDatabaseLayerMapping(new StringPropertiesMap(databaseLayerMapping));

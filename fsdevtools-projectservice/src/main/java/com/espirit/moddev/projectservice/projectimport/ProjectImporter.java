@@ -37,9 +37,7 @@ import de.espirit.firstspirit.manager.ProjectManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
@@ -52,6 +50,7 @@ public class ProjectImporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProjectImporter.class);
 
     public ProjectImporter() {
+        // Nothing to do here
     }
 
     /**
@@ -82,21 +81,19 @@ public class ProjectImporter {
             final ExportManager exportManager = connection.getManager(ExportManager.class);
             removeExportFileFromServerIfExists(projectImportParameters, exportManager);
 
-            final File projectFile = new File(projectImportParameters.getProjectFilePath());
-            FileInputStream fileInputStream = getResourceOrFileBasedInputStream(projectImportParameters);
-
-            final ExportFile exportFile = exportManager.uploadExportFile(projectFile.getName(), fileInputStream);
-            final ProjectInfo info = exportManager.getProjectInfo(exportFile);
+            ExportFile exportFile;
+            try (FileInputStream fileInputStream = new FileInputStream(projectImportParameters.getProjectFile())) {
+                exportFile = exportManager.uploadExportFile(projectImportParameters.getProjectFile().getName(), fileInputStream);
+            }
+            ProjectInfo info = exportManager.getProjectInfo(exportFile);
 
             HashMap<String, String> layerMapping = getLayerMappingDefinition(projectImportParameters, info);
 
-            final ImportParameters importParameters = new ImportParameters(
-                    exportFile, info,
+            ImportParameters importParameters = new ImportParameters(exportFile, info,
                     projectImportParameters.getProjectName(), projectImportParameters.getProjectDescription(), layerMapping,
                     new HashMap<>());
             importParameters.getLayerMapping();
-            final ServerActionHandle<ImportProgress, Boolean> importHandle = exportManager.startImport(importParameters);
-
+            ServerActionHandle<ImportProgress, Boolean> importHandle = exportManager.startImport(importParameters);
             waitUntilImportFinished(importHandle);
             refreshProjects(connection);
 
@@ -167,20 +164,11 @@ public class ProjectImporter {
         return layerMapping;
     }
 
-    private FileInputStream getResourceOrFileBasedInputStream(ProjectImportParameters projectImportParameters) throws FileNotFoundException {
-        FileInputStream fileInputStream = (FileInputStream) ProjectImporter.class
-                .getClassLoader().getResourceAsStream(projectImportParameters.getProjectFilePath());
-        if (fileInputStream == null) {
-            fileInputStream = new FileInputStream(projectImportParameters.getProjectFilePath());
-        }
-        return fileInputStream;
-    }
-
     private void removeExportFileFromServerIfExists(ProjectImportParameters projectImportParameters, ExportManager exportManager) {
         try {
             final List<ExportFile> exportFiles = exportManager.listExportFiles();
             for (final ExportFile exportFile : exportFiles) {
-                if (exportFile.getName().equals(projectImportParameters.getProjectFilePath())) {
+                if (exportFile.getName().equals(projectImportParameters.getProjectFile().getName())) {
                     exportManager.deleteExportFile(exportFile);
                 }
             }

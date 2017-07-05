@@ -16,6 +16,7 @@ import de.espirit.firstspirit.server.module.WebAppUtil;
 import de.espirit.firstspirit.server.projectmanagement.ProjectDTO;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URL;
@@ -31,7 +32,11 @@ public class ModuleInstaller {
     private static final org.slf4j.Logger LOGGER = LoggerFactory.getLogger(ModuleInstaller.class);
 
 
+    /**
+     * Instantiates a {@link ModuleInstaller}. Doesn't do anything else.
+     */
     public ModuleInstaller() {
+        // Nothing to do here
     }
 
     /**
@@ -41,7 +46,7 @@ public class ModuleInstaller {
      * @param connection A {@link ServerConnection} to the server the module shall be installed to
      * @return An optional ModuleResult. Result might be absent when there's an exception with the fsm file stream.
      */
-    private static Optional<ModuleResult> installModule(final String fsm, final ServerConnection connection) {
+    private static Optional<ModuleResult> installModule(final File fsm, final ServerConnection connection) {
         LOGGER.info("Starting module installation");
         ModuleAdminAgent moduleAdminAgent = connection.getBroker().requireSpecialist(ModuleAdminAgent.TYPE);
         boolean updateUsages = false;
@@ -88,11 +93,11 @@ public class ModuleInstaller {
     private static void setAutostartAndRestartService(ServerConnection connection, ModuleAdminAgent moduleAdminAgent, ComponentDescriptor componentDescriptor) {
         String componentDescriptorName = componentDescriptor.getName();
         moduleAdminAgent.setAutostart(componentDescriptorName, true);
-        LOGGER.info("Stopping service " + componentDescriptorName);
+        LOGGER.info("Stopping service {}", componentDescriptorName);
         moduleAdminAgent.stopService(componentDescriptorName);
-        LOGGER.info("Starting service " + componentDescriptorName);
+        LOGGER.info("Starting service {}", componentDescriptorName);
         connection.getManager(ServiceManager.class).startService(componentDescriptorName);
-        LOGGER.info("Service " + componentDescriptorName + " running: " + moduleAdminAgent.isRunning(componentDescriptorName));
+        LOGGER.info("Service {} running: {}", componentDescriptorName, moduleAdminAgent.isRunning(componentDescriptorName));
     }
 
     /**
@@ -189,21 +194,21 @@ public class ModuleInstaller {
      */
     private static void installProjectApps(final ServerConnection connection, final String moduleName, final ModuleInstallationParameters parameters) {
         Project project = connection.getProjectByName(parameters.getProjectName());
-        LOGGER.info("Installing project apps for " + moduleName + " project " + project.getName());
+        LOGGER.info("Installing project apps for {} project {}", moduleName, project.getName());
         ModuleAdminAgent moduleAdminAgent = connection.getBroker().requireSpecialist(ModuleAdminAgent.TYPE);
         Optional<ModuleDescriptor> moduleDescriptor = getModuleDescriptor(moduleAdminAgent, moduleName);
         if (moduleDescriptor.isPresent()) {
             Arrays.asList(moduleDescriptor.get().getComponents()).stream().filter(it -> it instanceof ProjectAppDescriptor).forEach(projectAppDescriptor -> {
-                LOGGER.info("ProjectDescriptor " + projectAppDescriptor.getName() + " is processed");
+                LOGGER.info("ProjectDescriptor {} is processed", projectAppDescriptor.getName());
 
                 FileSystem<?> projectAppConfig = null;
                 try {
                     projectAppConfig = moduleAdminAgent.getProjectAppConfig(moduleName, projectAppDescriptor.getName(), project);
                 } catch (IllegalArgumentException e) {
-                    LOGGER.info("projectAppConfig can not be obtained so it is created");
+                    LOGGER.info("projectAppConfig can not be obtained so it is created", e);
                 }
                 if (projectAppConfig != null) {
-                    LOGGER.info("existing project: " + project.getName() + " app config, please install configuration for " + moduleName + " changes manually");
+                    LOGGER.info("existing project: {} app config, please install configuration for {} changes manually", project.getName(), moduleName);
                 } else {
                     LOGGER.info("Install ProjectApp");
                     moduleAdminAgent.installProjectApp(moduleName, projectAppDescriptor.getName(), project);
@@ -212,7 +217,7 @@ public class ModuleInstaller {
                 }
             });
         } else {
-            LOGGER.error("No descriptor for " + moduleName + " found!");
+            LOGGER.error("No descriptor for {} found!", moduleName);
         }
         LOGGER.info("Installing project apps finished");
     }
@@ -307,13 +312,7 @@ public class ModuleInstaller {
 
         try {
             connection.getManager(WebServerManager.class).deployWar(webAppType, activeWebServer, appName, contextName, contextPath, true);
-            try {
-                project.lock();
-                project.setActiveWebServer(webScope.toString(), activeWebServer.getInstanceName());
-                project.save();
-                project.unlock();
-            } catch (LockException e) {
-                LOGGER.error("Cannot lock and save project!", e);
+            if (!setActiveWebServerForProject(webScope, activeWebServer, project)){
                 return false;
             }
 
@@ -324,11 +323,24 @@ public class ModuleInstaller {
         return true;
     }
 
+    private static boolean setActiveWebServerForProject(WebScope webScope, WebServerHandler activeWebServer, Project project) {
+        try {
+            project.lock();
+            project.setActiveWebServer(webScope.toString(), activeWebServer.getInstanceName());
+            project.save();
+            project.unlock();
+            return true;
+        } catch (LockException e) {
+            LOGGER.error("Cannot lock and save project!", e);
+            return false;
+        }
+    }
+
     /**
-     * TODO: Document me
+     * Installs a module on a FirstSpirit server. Uses the given connection.
      *
-     * @param connection
-     * @param parameters
+     * @param connection a connected FirstSpirit connection that is used to install the module
+     * @param parameters a parameter bean that defines how the module should be installed
      */
     public boolean install(ServerConnection connection, ModuleInstallationParameters parameters) {
         if (connection == null || !connection.isConnected()) {
@@ -343,12 +355,12 @@ public class ModuleInstaller {
             activateServices(connection, parameters, parameters.getProjectName());
 
             String moduleName = moduleResultOption.get().getDescriptor().getName();
-            LOGGER.info("Finished module installation for " + moduleName);
+            LOGGER.info("Finished module installation for {}", moduleName);
 
             installProjectApps(connection, moduleName, parameters);
             boolean webAppsSuccessfullyInstalled = installProjectWebApps(connection, parameters, moduleName);
             if(!webAppsSuccessfullyInstalled) {
-                LOGGER.error("WebApp installation and activation not successful for module " + moduleName);
+                LOGGER.error("WebApp installation and activation not successful for module {}", moduleName);
                 return false;
             }
             return true;

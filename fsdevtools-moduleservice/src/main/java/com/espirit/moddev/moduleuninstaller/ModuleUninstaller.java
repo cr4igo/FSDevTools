@@ -15,13 +15,29 @@ import java.util.Arrays;
 
 import static de.espirit.firstspirit.module.descriptor.ComponentDescriptor.Type.WEBAPP;
 
+/**
+ * This class uninstalls a module and all of its components from a FirstSpirit server.
+ */
 public class ModuleUninstaller {
     protected static final Logger LOGGER = LoggerFactory.getLogger(ModuleUninstaller.class);
 
 
+    /**
+     * Instantiates a {@link com.espirit.moddev.moduleinstaller.ModuleInstaller}. Does nothing else.
+     */
     public ModuleUninstaller() {
+        // Nothing to do here
     }
 
+    /**
+     * Uninstalls project apps, web apps and the module from the connected FirstSpirit server.
+     * Uses the static methods implemented at this class to reach this goal.
+     *
+     * @param connection a connected FirstSpirit connection
+     * @param projectId the id of the project where module components should be removed
+     * @param moduleName the name of the module that shall be uninstalled
+     * @throws IllegalStateException if connection is null or not connected
+     */
     public void uninstall(ServerConnection connection, long projectId, String moduleName) {
         if (connection == null || !connection.isConnected()) {
             throw new IllegalStateException("Connection is null or not connected!");
@@ -50,7 +66,7 @@ public class ModuleUninstaller {
         }
 
         LOGGER.info("Uninstalling project webapps");
-        Arrays.stream(descriptor.getComponents()).filter(it -> WEBAPP.equals(it.getScope())).forEach(componentDescriptor -> {
+        Arrays.stream(descriptor.getComponents()).filter(it -> WEBAPP.equals(it.getType())).forEach(componentDescriptor -> {
             for (WebEnvironment.WebScope scope : WebEnvironment.WebScope.values()) {
                 if (!scope.equals(WebEnvironment.WebScope.GLOBAL)) {
                     WebAppType webAppType = new WebAppType(projectId, scope);
@@ -73,17 +89,15 @@ public class ModuleUninstaller {
             throw new IllegalArgumentException("Module descriptor is null! Module not installed on server?");
         }
         if (projectAppManager == null) {
-            throw new IllegalArgumentException("WebAppManager is null!");
+            throw new IllegalArgumentException("ProjectAppManager is null!");
         }
 
         LOGGER.info("Uninstalling project apps");
         final ComponentDescriptor[] componentDescriptors = descriptor.getComponents();
         for (final ComponentDescriptor componentDescriptor : componentDescriptors) {
-            if (componentDescriptor != null) {
-                if (componentDescriptor.getType().equals(ComponentDescriptor.Type.PROJECTAPP)) {
-                    projectAppManager.uninstallProjectApp(descriptor.getModuleName(), componentDescriptor.getName(), projectId);
-                    LOGGER.info("Uninstalled project app for project with id " + projectId);
-                }
+            if (componentDescriptor.getType().equals(ComponentDescriptor.Type.PROJECTAPP)) {
+                projectAppManager.uninstallProjectApp(descriptor.getModuleName(), componentDescriptor.getName(), projectId);
+                LOGGER.info("Uninstalled project app for project with id {}", projectId);
             }
         }
     }

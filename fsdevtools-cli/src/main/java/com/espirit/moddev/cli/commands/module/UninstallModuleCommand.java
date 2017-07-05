@@ -10,6 +10,7 @@ import com.espirit.moddev.moduleuninstaller.ModuleUninstaller;
 import com.github.rvesse.airline.annotations.Command;
 import com.github.rvesse.airline.annotations.Option;
 import com.github.rvesse.airline.annotations.OptionType;
+import com.github.rvesse.airline.annotations.help.Examples;
 import com.github.rvesse.airline.annotations.restrictions.Required;
 import de.espirit.firstspirit.access.Connection;
 import de.espirit.firstspirit.common.MaximumNumberOfSessionsExceededException;
@@ -18,7 +19,14 @@ import de.espirit.firstspirit.server.authentication.AuthenticationException;
 
 import java.io.IOException;
 
+/**
+ * Uninstalls a module from a FirstSpirit server. Removes corresponding components and project-specific
+ * components for the given project.
+ */
 @Command(name = "uninstall", groupNames = {"module"}, description = "Uninstalls a FirstSpirit module from a FirstSpirit Server.")
+@Examples(
+        examples = {"fs-cli module uninstall -h localhost -p 8000 --moduleName \"abtesting\" --projectName \"Mithras Energy\""},
+        descriptions = {"Uninstalls the abtesting module and removes all components from the Mithras Energy project"})
 public class UninstallModuleCommand extends SimpleCommand<SimpleResult<Boolean>> {
 
     @Option(type = OptionType.COMMAND, name = {"-m", "--moduleName"}, description = "Name of the module that should be deleted")
@@ -52,5 +60,21 @@ public class UninstallModuleCommand extends SimpleCommand<SimpleResult<Boolean>>
     @Override
     public boolean needsContext() {
         return false;
+    }
+
+    public String getModuleName() {
+        return moduleName;
+    }
+
+    public void setModuleName(String moduleName) {
+        this.moduleName = moduleName;
+    }
+
+    public String getProjectName() {
+        return projectName;
+    }
+
+    public void setProjectName(String projectName) {
+        this.projectName = projectName;
     }
 }
