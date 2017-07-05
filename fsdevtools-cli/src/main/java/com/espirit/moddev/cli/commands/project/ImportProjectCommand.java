@@ -1,10 +1,8 @@
 package com.espirit.moddev.cli.commands.project;
 
 import com.espirit.moddev.cli.ConnectionBuilder;
-import com.espirit.moddev.cli.api.result.Result;
 import com.espirit.moddev.cli.commands.SimpleCommand;
 import com.espirit.moddev.cli.results.SimpleResult;
-import com.espirit.moddev.cli.results.TestResult;
 import com.espirit.moddev.core.StringPropertiesMap;
 import com.espirit.moddev.projectservice.projectimport.ProjectImportParametersBuilder;
 import com.espirit.moddev.projectservice.projectimport.ProjectImporter;
@@ -23,8 +21,8 @@ import java.io.File;
 @Examples(
         examples = {"fs-cli project import -h localhost -p 8000 project import --importProjectName \"newProjectName\" --projectFile \"D:\\my-project-export.tar.gz\""},
         descriptions = {"Imports the project export into a new project that is named newProjectName"})
-public class ProjectImportCommand extends SimpleCommand<SimpleResult<Boolean>>{
-    protected static final Logger LOGGER = LoggerFactory.getLogger(ProjectImportCommand.class);
+public class ImportProjectCommand extends SimpleCommand<SimpleResult<Boolean>>{
+    protected static final Logger LOGGER = LoggerFactory.getLogger(ImportProjectCommand.class);
 
     @Option(type = OptionType.COMMAND, name = {"-ipn", "--importProjectName"}, description = "Name of the FirstSpirit target project where the import should go")
     private String projectName;
