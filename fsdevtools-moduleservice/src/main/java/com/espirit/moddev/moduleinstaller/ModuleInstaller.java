@@ -25,7 +25,8 @@ public class ModuleInstaller {
     private static final org.slf4j.Logger LOGGER = LoggerFactory.getLogger(ModuleInstaller.class);
 
 
-    public ModuleInstaller() {}
+    public ModuleInstaller() {
+    }
 
     /**
      * Method for installing a given FirstSpirit module (only the module itself will be installed, no components will be added to any project).
@@ -33,7 +34,6 @@ public class ModuleInstaller {
      * @param fsm        The path to the FirstSpirit module to be installed
      * @param connection A {@link ServerConnection} to the server the module shall be installed to
      * @return A String representing the name of the installed module
-     * @throws Exception Exception
      */
     public static Optional<ModuleResult> installModule(final String fsm, final ServerConnection connection) {
         LOGGER.info("Starting module installation");
@@ -207,28 +207,27 @@ public class ModuleInstaller {
      * Method for installing the project applications of a given module into a given project
      *
      * @param moduleName               The name of the module whose project applications shall be installed
-     * @param projectId                The id of the project the project applications shall be installed to
      * @param projectAppConfigurations A map of projectApps and pathes to according configurations files
      * @param connection               A {@link ServerConnection} to the server
-     * @throws IOException IOException
+     * @param projectName              The project name the project applications shall be installed to
      */
     public static void installProjectApps(final String moduleName,
-                                          final long projectId,
                                           final Map<String, String> projectAppConfigurations,
-                                          final ServerConnection connection) {
+                                          final ServerConnection connection, String projectName) {
 
-        LOGGER.info("Installing project apps for " + moduleName + " projectId " + projectId);
+        LOGGER.info("Installing project apps for " + moduleName + " project " + projectName);
         ModuleAdminAgent moduleAdminAgent = connection.getBroker().requireSpecialist(ModuleAdminAgent.TYPE);
         Optional<ModuleDescriptor> moduleDescriptor = getModuleDescriptor(moduleAdminAgent, moduleName);
         if (moduleDescriptor.isPresent()) {
             final ComponentDescriptor[] componentDescriptors = moduleDescriptor.get().getComponents();
-            if(componentDescriptors.length > 0) {
+            LOGGER.info("Found " + componentDescriptors.length + " component descriptors");
+            if (componentDescriptors.length > 0) {
                 for (final ComponentDescriptor componentDescriptor : componentDescriptors) {
                     if (componentDescriptor instanceof ProjectAppDescriptor) {
                         ProjectAppDescriptor projectAppDescriptor = (ProjectAppDescriptor) componentDescriptor;
                         LOGGER.info("ProjectDescriptor " + projectAppDescriptor.getName() + " is processed");
 
-                        Project project = connection.getProjectById(projectId);
+                        Project project = connection.getProjectByName(projectName);
                         FileSystem<?> projectAppConfig = null;
                         try {
                             projectAppConfig = moduleAdminAgent.getProjectAppConfig(moduleName, projectAppDescriptor.getName(), project);
@@ -241,13 +240,13 @@ public class ModuleInstaller {
                             LOGGER.info("Install ProjectApp");
                             moduleAdminAgent.installProjectApp(moduleName, projectAppDescriptor.getName(), project);
                             LOGGER.info("Create configuration files");
-                            createConfigurationFiles(ComponentDescriptor.Type.PROJECTAPP, connection, componentDescriptor, projectAppConfigurations, moduleName, projectId, null);
+                            createConfigurationFiles(ComponentDescriptor.Type.PROJECTAPP, connection, componentDescriptor, projectAppConfigurations, moduleName, project.getId(), null);
                         }
                     }
                 }
             }
         } else {
-            LOGGER.error("no descriptor for " + moduleName + " found!");
+            LOGGER.error("No descriptor for " + moduleName + " found!");
         }
         LOGGER.info("Installing project apps finished");
     }
@@ -264,10 +263,11 @@ public class ModuleInstaller {
     /**
      * Method for installing the web applications of a given module into a given project
      *
-     * @param moduleName The name of the module whose web applications shall be installed
-     * @param projectId  The id of the project the web applications shall be installed to
-     * @param connection A {@link ServerConnection} to the server
-     * @throws IOException IOException
+     * @param moduleName           The name of the module whose web applications shall be installed
+     * @param projectId            The id of the project the web applications shall be installed to
+     * @param webappscopes         The scopes to configure for the corresponding webapps
+     * @param webAppConfigurations The webapp configurations to apply
+     * @param connection           A {@link ServerConnection} to the server
      */
     public static void installProjectWebApps(final String moduleName,
                                              final long projectId, final Map<String, String> webappscopes,
@@ -331,7 +331,7 @@ public class ModuleInstaller {
                             LOGGER.error("invalid scope: " + webScope);
                         }
                         try {
-                            wm.installWebApp(moduleName, componentDescriptor.getName(), webAppType,true);
+                            wm.installWebApp(moduleName, componentDescriptor.getName(), webAppType, true);
                             createConfigurationFiles(ComponentDescriptor.Type.WEBAPP, connection,
                                     componentDescriptor, webAppConfigurations,
                                     moduleName, projectId,
@@ -478,13 +478,13 @@ public class ModuleInstaller {
         ServerConnection connection = null;
         String fsm = "";
         long projectId = 0;
-        installer.install(fsm, projectId, connection);
+        installer.install(fsm, connection, "");
         String moduleName = "";
         installer.uninstall(projectId, connection, moduleName);
     }
 
-    private static void uninstall(long projectId, ServerConnection connection, String moduleName) {
-        if(connection == null || !connection.isConnected()) {
+    public void uninstall(long projectId, ServerConnection connection, String moduleName) {
+        if (connection == null || !connection.isConnected()) {
             throw new IllegalStateException("Connection is null or not connected!");
         }
         uninstallProjectWebApps(moduleName, projectId, connection);
@@ -492,40 +492,38 @@ public class ModuleInstaller {
         uninstallModule(moduleName, connection);
     }
 
-    private boolean install(String fsm, long projectId, ServerConnection connection) {
-        if(connection == null || !connection.isConnected()) {
+    public boolean install(String fsm, ServerConnection connection, String projectName) {
+        if (connection == null || !connection.isConnected()) {
             throw new IllegalStateException("Connection is null or not connected!");
         }
 
+        long projectId = connection.getManager(ProjectManager.class).getProjectByName(projectName).getID();
         Optional<ModuleResult> moduleResultOption = installModule(fsm, connection);
         moduleResultOption.ifPresent((result) -> {
             String moduleName = result.getDescriptor().getName();
             LOGGER.info("Finished module installation for " + moduleName);
 
-            installProjectApps(moduleName, projectId, new HashMap<>(), connection);
+            installProjectApps(moduleName, new HashMap<>(), connection, projectName);
             installProjectWebApps(moduleName, projectId, new HashMap<>(), new HashMap<>(), connection);
 
         });
         return true;
     }
 
-    public static void install(ServerConnection connection, final String _modulename, final String projectname, final Map<String, String> _projectappconfigurations, final Map<String, String> _webappscopes, Map<String, String> _webappconfigurations, Map<String, String> _serviceconfigurations, final String _modulefile) throws Exception {
-        installModule(_modulefile, connection);
-        activateServices(_modulename, _serviceconfigurations, connection);
+    public static void install(ServerConnection connection, final String modulename, final String projectName, final Map<String, String> projectAppConfigurations, final Map<String, String> webappScopes, Map<String, String> webappConfigurations, Map<String, String> serviceConfigurations, final String moduleFile) throws Exception {
+        installModule(moduleFile, connection);
+        activateServices(modulename, serviceConfigurations, connection);
 
         final ProjectManager projectManager = connection.getManager(ProjectManager.class);
         long projectId = -1;
-        if (projectname != null && !"".equals(projectname.trim())) {
-            if (projectManager.getProjectByName(projectname) != null) {
-                projectId = projectManager.getProjectByName(projectname)
-                        .getID();
+        if (projectName != null && !"".equals(projectName.trim())) {
+            if (projectManager.getProjectByName(projectName) != null) {
+                projectId = projectManager.getProjectByName(projectName).getID();
 
-                installProjectApps(_modulename, projectId,
-                        _projectappconfigurations, connection);
-                installProjectWebApps(_modulename, projectId,
-                        _webappscopes, _webappconfigurations, connection);
+                installProjectApps(modulename, projectAppConfigurations, connection, projectName);
+                installProjectWebApps(modulename, projectId, webappScopes, webappConfigurations, connection);
             } else {
-                throw new IllegalStateException("There's no project named " + projectname + " on that server.");
+                throw new IllegalStateException("There's no project named " + projectName + " on that server.");
             }
         } else {
             LOGGER.warn("No project specified. Module components won't be installed for any project!");
