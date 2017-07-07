@@ -19,8 +19,13 @@ import java.io.File;
 
 @Command(name = "import", groupNames = {"project"}, description = "Imports a FirstSpirit project export into a FirstSpirit Server as a new project.")
 @Examples(
-        examples = {"fs-cli project import -h localhost -p 8000 project import --importProjectName \"newProjectName\" --projectFile \"D:\\my-project-export.tar.gz\""},
-        descriptions = {"Imports the project export into a new project that is named newProjectName"})
+        examples = {"fs-cli project import -h localhost -p 8000 project import --importProjectName \"newProjectName\" --projectFile \"D:\\my-project-export.tar.gz\"",
+                    "fs-cli project import --importProjectName \"newProjectName\" --projectFile \"D:\\my-project-export.tar.gz\" -lm *:CREATE_NEW",
+                    "fs-cli project import --importProjectName \"newProjectName\" --projectFile \"D:\\my-project-export.tar.gz\" -lm schema_a:derby_project14747_0,schema_b:derby_project14747_1"
+        },
+        descriptions = {"Imports the project export into a new project that is named newProjectName",
+                        "Import project and create for every unknown source schema a new target layer (use if uncertain)",
+                        "Import project and use specified mapping for source schemas and existing target layers. The target layers must be attached to the project! (use with caution)"})
 public class ImportProjectCommand extends SimpleCommand<SimpleResult<Boolean>>{
     protected static final Logger LOGGER = LoggerFactory.getLogger(ImportProjectCommand.class);
 
@@ -32,7 +37,7 @@ public class ImportProjectCommand extends SimpleCommand<SimpleResult<Boolean>>{
     private String projectFile;
     @Option(type = OptionType.COMMAND, name = {"-fpa", "--forceProjectActivation"}, description = "Whether to force the project activation if the project is deactivated after import somehow. Default is false.")
     private boolean forceProjectActivation;
-    @Option(type = OptionType.COMMAND, name = {"-dlm", "--databaseLayerMapping"}, description = "Define a map-like layerMapping with comma-separated key-value pairs by : or =; . Use layer names.")
+    @Option(type = OptionType.COMMAND, name = {"-dlm", "--databaseLayerMapping"}, description = "Define a map-like layerMapping with comma-separated key-value pairs by : or =; . See command examples.")
     private String databaseLayerMapping;
 
     @Override
