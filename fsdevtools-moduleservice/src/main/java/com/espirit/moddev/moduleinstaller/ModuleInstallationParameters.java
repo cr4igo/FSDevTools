@@ -13,12 +13,22 @@ public class ModuleInstallationParameters {
     private final Map<String, String> webAppConfigurations;
 
     /**
+     * Instantiates a parameters object and uses empty configurations for services, project apps and webapps.
+     *
      * @param projectName the name of the FirstSpirit project the module's components should be installed to
-     * @param fsm the module file (fsm)
-     * @param serviceConfigurations configurations for the module's services
+     * @param fsm         the module file (fsm)
+     */
+    public ModuleInstallationParameters(String projectName, File fsm) {
+        this(projectName, fsm, new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>());
+    }
+
+    /**
+     * @param projectName              the name of the FirstSpirit project the module's components should be installed to
+     * @param fsm                      the module file (fsm)
+     * @param serviceConfigurations    configurations for the module's services
      * @param projectAppConfigurations configurations for the module's project apps
-     * @param webAppScopes scope configurations for the module's webapps
-     * @param webAppConfigurations configurations for the module's webapps
+     * @param webAppScopes             scope configurations for the module's webapps
+     * @param webAppConfigurations     configurations for the module's webapps
      */
     public ModuleInstallationParameters(String projectName, File fsm, Map<String, String> serviceConfigurations, Map<String, String> projectAppConfigurations, Map<String, String> webAppScopes, Map<String, String> webAppConfigurations) {
         this.projectName = projectName;
