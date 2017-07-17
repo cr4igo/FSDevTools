@@ -14,14 +14,10 @@ import de.espirit.firstspirit.module.descriptor.*;
 import de.espirit.firstspirit.server.module.WebAppType;
 import de.espirit.firstspirit.server.module.WebAppUtil;
 import de.espirit.firstspirit.server.projectmanagement.ProjectDTO;
-import org.jetbrains.annotations.Nullable;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.net.URL;
 import java.util.*;
-import java.util.Map.Entry;
-import java.util.stream.Collectors;
 
 import static de.espirit.firstspirit.module.WebEnvironment.WebScope.PREVIEW;
 import static de.espirit.firstspirit.module.WebEnvironment.WebScope.STAGING;
@@ -64,13 +60,12 @@ public class ModuleInstaller {
 
     /**
      * Method for activating auto start of services of a given module
-     *
-     * @param connection A {@link ServerConnection} to the server
+     *  @param connection A {@link ServerConnection} to the server
      * @param parameters
-     * @param moduleName The name of the module whose services shall be activated
-     * @throws IllegalArgumentException if project cannot be retrieved for given projectname
+     * @param descriptor the module descriptor
      */
-    private static void activateServices(final ServerConnection connection, ModuleInstallationParameters parameters, final String moduleName) {
+    private static void activateServices(final ServerConnection connection, ModuleInstallationParameters parameters, ModuleDescriptor descriptor) {
+        String moduleName = descriptor.getModuleName();
         ProjectDTO project = connection.getManager(ProjectManager.class).getProjectByName(parameters.getProjectName());
         if(project == null) {
             throw new IllegalArgumentException("Project " + parameters.getProjectName() + " not found!");
@@ -85,18 +80,21 @@ public class ModuleInstaller {
             LOGGER.info("ModuleDescriptor not present!");
         }
 
-        moduleDescriptor.ifPresent(descriptor -> {
-            final ComponentDescriptor[] componentDescriptors = descriptor.getComponents();
-            if (componentDescriptors == null) {
-                LOGGER.error("No components found for module: " + moduleName);
-            } else {
-                Arrays.stream(componentDescriptors).filter(it -> it.getType().equals(SERVICE)).forEach(serviceDescriptor -> {
-                    LOGGER.info("Found service " + serviceDescriptor.getName());
-                    createConfigurationFiles(SERVICE, connection, serviceDescriptor, parameters.getServiceConfigurations(), moduleName, projectId, null);
+        final ComponentDescriptor[] componentDescriptors = descriptor.getComponents();
+        if (componentDescriptors == null) {
+            LOGGER.error("No components found for module: " + moduleName);
+        } else {
+            Arrays.stream(componentDescriptors).filter(it -> it.getType().equals(SERVICE)).forEach(serviceDescriptor -> {
+                LOGGER.info("Found service " + serviceDescriptor.getName());
+                File configuration = parameters.getServiceConfigurations().get(serviceDescriptor.getName());
+                if(configuration != null) {
+                    createConfigurationFile(SERVICE, connection, serviceDescriptor, configuration, moduleName, projectId, null);
                     setAutostartAndRestartService(connection, moduleAdminAgent, serviceDescriptor);
-                });
-            }
-        });
+                } else {
+                    LOGGER.info("No configuration found for service " + serviceDescriptor.getName());
+                }
+            });
+        }
     }
 
     private static void setAutostartAndRestartService(ServerConnection connection, ModuleAdminAgent moduleAdminAgent, ComponentDescriptor componentDescriptor) {
@@ -111,26 +109,20 @@ public class ModuleInstaller {
 
     /**
      * Convenience method for copying the configuration files from the module to the server-dirs
-     *
      * @param type                  Type of the module whose configuration should be written e.g. Service, ProjectApp
      * @param connection            A {@link ServerConnection} to the server
      * @param componentDescriptor   The component from the module.xml to use
-     * @param configurations The map from the pom.xml that includes the configuration files
+     * @param configurationFile The map from the pom.xml that includes the configuration files
      * @param moduleName            The name of the module whose configuration should be written (nullable)
      * @param projectId             The id of the project the project applications shall be installed to
      * @param scope                 The scope to use - only used by webapp configurations
      */
-    private static void createConfigurationFiles(ComponentDescriptor.Type type,
-                                                 ServerConnection connection,
-                                                 ComponentDescriptor componentDescriptor,
-                                                 Map<String, String> configurations,
-                                                 String moduleName,
-                                                 long projectId, WebScope scope) {
-
-        saveServiceConfigurations(type, connection, componentDescriptor, moduleName, projectId, scope, configurations);
-    }
-
-    private static void saveServiceConfigurations(ComponentDescriptor.Type type, ServerConnection connection, ComponentDescriptor componentDescriptor, String moduleName, long projectId, WebScope scope, Map<String, String> configurations) {
+    private static void createConfigurationFile(ComponentDescriptor.Type type,
+                                                ServerConnection connection,
+                                                ComponentDescriptor componentDescriptor,
+                                                File configurationFile,
+                                                String moduleName,
+                                                long projectId, WebScope scope) {
         LOGGER.info("Config created, preparing for saving");
         Optional<FileSystem<?>> fsOptional = getFileSystemForConfigurationType(type, connection, componentDescriptor, moduleName, projectId, scope);
         fsOptional.ifPresent(fs -> {
@@ -139,34 +131,13 @@ public class ModuleInstaller {
             try {
                 handle = fs.obtain(getConfigFileName(componentDescriptor) + ".ini");
                 LOGGER.info("Saving handle to " + handle.getPath());
-                String propertiesMapContent = configurations.entrySet().stream().map(entry -> entry.getKey() + "=" + entry.getValue()).collect(Collectors.joining("\n"));
-                handle.save(new ByteArrayInputStream(propertiesMapContent.getBytes("UTF-8")));
+                handle.save(new FileInputStream(configurationFile));
             } catch (IOException e) {
                 LOGGER.error("Cannot obtain and save file handle!", e);
             }
         });
 
         LOGGER.info("Configuration files created");
-    }
-
-    private static List<String> extractServiceConfigurations(ComponentDescriptor componentDescriptor, Map<String, String> serviceConfigurations) {
-        LOGGER.info("Creating configuration files");
-        List<String> configurationFiles = new ArrayList<>();
-        String replacement = componentDescriptor.getName().replace(" ", "_");
-        boolean nameContainsWhiteSpace = componentDescriptor.getName().contains(" ");
-        String usedKey = nameContainsWhiteSpace ? replacement : componentDescriptor.getName();
-        String configuration = serviceConfigurations.get(usedKey);
-        if (configuration != null) {
-            URL configurationFileUrl = ModuleInstaller.class.getClassLoader().getResource(configuration);
-            if (configurationFileUrl != null) {
-                configurationFiles.add(configurationFileUrl.getFile());
-            } else {
-                configurationFiles = Arrays.asList(configuration.split(","));
-            }
-        } else {
-            LOGGER.info("No service configuration found for " + componentDescriptor.getName());
-        }
-        return configurationFiles;
     }
 
     private static Optional<FileSystem<?>> getFileSystemForConfigurationType(ComponentDescriptor.Type type, ServerConnection connection, ComponentDescriptor componentDescriptor, String moduleName, long projectId, WebScope scope) {
@@ -222,7 +193,9 @@ public class ModuleInstaller {
                     LOGGER.info("Install ProjectApp");
                     moduleAdminAgent.installProjectApp(moduleName, projectAppDescriptor.getName(), project);
                     LOGGER.info("Create configuration files");
-                    createConfigurationFiles(ComponentDescriptor.Type.PROJECTAPP, connection, projectAppDescriptor, parameters.getProjectAppConfigurations(), moduleName, project.getId(), null);
+                    parameters.getProjectAppConfiguration().ifPresent(projectAppFile -> {
+                        createConfigurationFile(ComponentDescriptor.Type.PROJECTAPP, connection, projectAppDescriptor, projectAppFile, moduleName, project.getId(), null);
+                    });
                 }
             });
         } else {
@@ -275,33 +248,27 @@ public class ModuleInstaller {
         return !failed.isPresent();
     }
 
-    private static void createWebAppConfigurationFiles(ServerConnection connection, String moduleName, long projectId, WebAppManager wm, ComponentDescriptor[] componentDescriptors, Map<String, String> webAppScopes, Map<String, String> webAppConfigurations) {
+    private static void createWebAppConfigurationFiles(ServerConnection connection, String moduleName, long projectId, WebAppManager wm, ComponentDescriptor[] componentDescriptors, List<WebScope> webAppScopes, Map<WebScope, File> webAppConfigurations) {
         LOGGER.info("Creating WebApp configuration files");
         Arrays.stream(componentDescriptors).filter(it -> ComponentDescriptor.Type.WEBAPP.equals(it.getType())).forEach(componentDescriptor -> {
-            String componentDescriptorName = getConfigFileName(componentDescriptor);
-
-            String webScopesString = webAppScopes.get(componentDescriptorName);
-            if (webScopesString != null) {
-                for (String scope : webScopesString.split(",")) {
-                    scope = scope.trim().toUpperCase();
+            for (WebScope scope : webAppScopes) {
+                if(webAppConfigurations.containsKey(scope)) {
                     try {
-                        WebScope webScope = WebScope.valueOf(scope.toUpperCase());
-                        WebAppType webAppType = new WebAppType(projectId, webScope);
+                        WebAppType webAppType = new WebAppType(projectId, scope);
 
                         wm.installWebApp(moduleName, componentDescriptor.getName(), webAppType, true);
-                        createConfigurationFiles(ComponentDescriptor.Type.WEBAPP,
+                        createConfigurationFile(ComponentDescriptor.Type.WEBAPP,
                                 connection,
                                 componentDescriptor,
-                                webAppConfigurations,
+                                webAppConfigurations.get(scope),
                                 moduleName, projectId,
-                                webScope);
+                                scope);
 
                         LOGGER.info("WebAppScope: " + scope);
                     } catch (IOException | IllegalArgumentException e) {
                         LOGGER.error("Invalid Scope " + scope, e);
                     }
                 }
-
             }
         });
     }
@@ -366,7 +333,7 @@ public class ModuleInstaller {
 
         Optional<ModuleResult> moduleResultOption = installModule(parameters.getFsm(), connection);
         if(moduleResultOption.isPresent()) {
-            activateServices(connection, parameters, moduleResultOption.get().getDescriptor().getModuleName());
+            activateServices(connection, parameters, moduleResultOption.get().getDescriptor());
 
             String moduleName = moduleResultOption.get().getDescriptor().getName();
             LOGGER.info("Finished module installation for {}", moduleName);
