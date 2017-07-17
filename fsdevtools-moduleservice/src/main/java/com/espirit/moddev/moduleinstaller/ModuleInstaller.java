@@ -188,15 +188,14 @@ public class ModuleInstaller {
                     LOGGER.debug("", e);
                 }
                 if (projectAppConfig != null) {
-                    LOGGER.info("existing project: {} app config, please install configuration for {} changes manually", project.getName(), moduleName);
-                } else {
-                    LOGGER.info("Install ProjectApp");
-                    moduleAdminAgent.installProjectApp(moduleName, projectAppDescriptor.getName(), project);
-                    LOGGER.info("Create configuration files");
-                    parameters.getProjectAppConfiguration().ifPresent(projectAppFile -> {
-                        createConfigurationFile(ComponentDescriptor.Type.PROJECTAPP, connection, projectAppDescriptor, projectAppFile, moduleName, project.getId(), null);
-                    });
+                    LOGGER.info("Existing project: {} app config - updating with the given configuration!", project.getName(), moduleName);
                 }
+                LOGGER.info("Install ProjectApp");
+                moduleAdminAgent.installProjectApp(moduleName, projectAppDescriptor.getName(), project);
+                LOGGER.info("Create configuration files");
+                parameters.getProjectAppConfiguration().ifPresent(projectAppFile -> {
+                    createConfigurationFile(ComponentDescriptor.Type.PROJECTAPP, connection, projectAppDescriptor, projectAppFile, moduleName, project.getId(), null);
+                });
             });
         } else {
             LOGGER.error("No descriptor for {} found!", moduleName);
@@ -319,6 +318,7 @@ public class ModuleInstaller {
 
     /**
      * Installs a module on a FirstSpirit server. Uses the given connection.
+     * If any of the configured components is already installed, it is updated.
      *
      * @param connection a connected FirstSpirit connection that is used to install the module
      * @param parameters a parameter bean that defines how the module should be installed

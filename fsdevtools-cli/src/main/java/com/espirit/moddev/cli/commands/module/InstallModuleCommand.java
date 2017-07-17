@@ -3,7 +3,6 @@ package com.espirit.moddev.cli.commands.module;
 import com.espirit.moddev.cli.ConnectionBuilder;
 import com.espirit.moddev.cli.commands.SimpleCommand;
 import com.espirit.moddev.cli.results.SimpleResult;
-import com.espirit.moddev.core.StringPropertiesMap;
 import com.espirit.moddev.moduleinstaller.ModuleInstallationParameters;
 import com.espirit.moddev.moduleinstaller.ModuleInstaller;
 import com.github.rvesse.airline.annotations.Command;
@@ -28,9 +27,9 @@ import static java.util.stream.Collectors.toList;
 
 /**
  * Installs a module on a FirstSpirit server. Provides mechanisms to configure project apps, webapps
- * and corresponding scopes.
+ * and corresponding scopes. If a given component is already installed, it is updated.
  */
-@Command(name = "install", groupNames = {"module"}, description = "Installs a FirstSpirit module into a FirstSpirit Server.")
+@Command(name = "install", groupNames = {"module"}, description = "Installs a FirstSpirit module into a FirstSpirit Server. If a given component is already installed, it is updated.")
 @Examples(examples = "module install -mpn \"Mithras Energy\" -fsm \"solder\\videomanagementpro.fsm\" -pacf \"resources\\projectApp.ini\" " +
         "-scf \"MyServiceName=resources\\serviceConfig.ini\" -wacf \"preview=resources\\previewAppConfig.ini\"",
         descriptions = "module install -mpn \"module.fsm\" -pac \"user:myUserName,password:secret,alwaysLogin:true\"")
@@ -42,34 +41,25 @@ public class InstallModuleCommand extends SimpleCommand<SimpleResult<Boolean>> {
     @Required
     private String fsm;
 
-    @Option(type = OptionType.COMMAND, name = {"-mpn", "--moduleProjectName"}, description = "Name of the FirstSpirit target project where the applications should be installed to")
+    @Option(type = OptionType.COMMAND, name = {"-mpn", "--moduleProjectName"}, description = "Name of the FirstSpirit target project where the application's components should be installed to")
     @Required
     private String projectName;
 
     @Option(type = OptionType.COMMAND, name = {"-scf", "--serviceConfigurationFiles"}, description = "Define a map-like configuration for services of the given module - comma-separated value paris with service name and configuration path file.")
-    private String serviceConfigurations;
+    private String serviceConfigurationsFiles;
     @Option(type = OptionType.COMMAND, name = {"-pacf", "--projectAppConfigurationFile"}, description = "Configuration file path for project app")
-    private String projectAppConfiguration;
+    private String projectAppConfigurationFile;
     @Option(type = OptionType.COMMAND, name = {"-was", "--webAppScopes"}, description = "Define a map-like configuration for webapp scopes of the given module - comma-separated values from the FirstSpirit WebScope enum.")
     private String webAppScopes;
     @Option(type = OptionType.COMMAND, name = {"-wacf", "--webAppConfigurationFiles"}, description = "Define a map-like configuration for the webapps of the given module - with comma-separated key-values.")
-    private String webAppConfigurations;
+    private String webAppConfigurationFiles;
 
     @Override
     public SimpleResult<Boolean> call() {
         try(Connection connection = create()) {
             connection.connect();
             if(connection instanceof ServerConnection) {
-                ServerConnection serverConnection = (ServerConnection) connection;
-
-                File projectAppConfigurationFile = getOptionalProjectAppConfigurationFile();
-                List<WebScope> splittedWebAppScopes = extractWebScopes();
-                Map<WebScope, File> webappConfigurationFilesForWebScopes = getWebScopeFileMap();
-                Map<String, File> configurationFileForServiceName = getStringFilesMap(serviceConfigurations);
-
-                final ModuleInstallationParameters parameters = new ModuleInstallationParameters(projectName, new File(fsm), configurationFileForServiceName, projectAppConfigurationFile, splittedWebAppScopes, webappConfigurationFilesForWebScopes);
-                boolean installed = new ModuleInstaller().install(serverConnection, parameters);
-                return new SimpleResult<>(installed);
+                return installModule((ServerConnection) connection);
             }
         } catch (IOException | AuthenticationException | MaximumNumberOfSessionsExceededException | IllegalArgumentException e) {
             return new SimpleResult<>(e);
@@ -77,41 +67,67 @@ public class InstallModuleCommand extends SimpleCommand<SimpleResult<Boolean>> {
         return new SimpleResult<>(new IllegalStateException("Provided connection is not a server connection!"));
     }
 
-    private Map<WebScope, File> getWebScopeFileMap() {
-        return getStringFilesMap(webAppConfigurations).entrySet().stream().collect(Collectors.toMap(entry -> WebScope.valueOf(entry.getKey().trim().toUpperCase()), entry -> {
+    private SimpleResult<Boolean> installModule(ServerConnection connection) {
+        File projectAppConfigurationFile = getAndValidateOptionalProjectAppConfigurationFile();
+        List<WebScope> splittedWebAppScopes = extractWebScopes();
+        Map<WebScope, File> webappConfigurationFilesForWebScopes = getAndValidateWebScopeFileMap();
+        Map<String, File> configurationFileForServiceName = getAndValidateStringFilesMap(serviceConfigurationsFiles);
+
+        final ModuleInstallationParameters parameters = new ModuleInstallationParameters(projectName, new File(fsm), configurationFileForServiceName, projectAppConfigurationFile, splittedWebAppScopes, webappConfigurationFilesForWebScopes);
+        boolean installed = new ModuleInstaller().install(connection, parameters);
+        return new SimpleResult<>(installed);
+    }
+
+    private File getAndValidateOptionalProjectAppConfigurationFile() {
+        File result = getOptionalProjectAppConfigurationFile();
+        if(!result.isFile() || !result.exists()) {
+            throw new IllegalArgumentException("Project app configuration file doesn't exist or is not a file!");
+        }
+        return result;
+    }
+
+    private Map<String, File> getAndValidateStringFilesMap(String configurations) {
+        Map<String, File> result = getStringFilesMap(configurations);
+        for(Map.Entry<String, File> entry : result.entrySet()) {
+            if(!entry.getValue().exists() || !entry.getValue().isFile()) {
+                throw new IllegalArgumentException("File doesn't exist for key " + entry.getKey());
+            }
+        }
+        return result;
+    }
+
+    private Map<WebScope, File> getAndValidateWebScopeFileMap() {
+        Map<WebScope, File> webScopeFileMap = getWebScopeFileMap();
+        for(Map.Entry<WebScope, File> entry : webScopeFileMap.entrySet()) {
             if(!entry.getValue().isFile() || !entry.getValue().exists()) {
                 throw new IllegalArgumentException("File for webapp configuration with scope " + entry.getKey() + " doesn't exist or is not a file.");
             }
-            return entry.getValue();
-        }));
+        }
+        return webScopeFileMap;
     }
 
-    private File getOptionalProjectAppConfigurationFile() {
+    protected Map<WebScope, File> getWebScopeFileMap() {
+        return getStringFilesMap(webAppConfigurationFiles).entrySet().stream().collect(Collectors.toMap(entry -> WebScope.valueOf(entry.getKey().trim().toUpperCase()), Map.Entry::getValue));
+    }
+
+    protected File getOptionalProjectAppConfigurationFile() {
         File projectAppConfigurationFile = null;
-        if(projectAppConfiguration != null) {
-            projectAppConfigurationFile = new File(projectAppConfiguration);
-            if(!projectAppConfigurationFile.isFile() || !projectAppConfigurationFile.exists()) {
-                throw new IllegalArgumentException("Project app configuration file doesn't exist or is not a file!");
-            }
+        if(this.projectAppConfigurationFile != null) {
+            projectAppConfigurationFile = new File(this.projectAppConfigurationFile);
         }
         return projectAppConfigurationFile;
     }
 
-    private Map<String, File> getStringFilesMap(String webAppConfigurations) {
+    protected Map<String, File> getStringFilesMap(String webAppConfigurations) {
         if(webAppConfigurations == null) {
             return new HashMap<>();
         }
-        Map<String, File> result = Arrays.stream(webAppConfigurations.split(",")).map(propertyString -> propertyString.split("=")).collect(Collectors.toMap(entry -> entry[0], entry -> {
-            File file = new File(entry[1]);
-            if(!file.exists() || !file.isFile()) {
-                throw new IllegalArgumentException("File doesn't exist for key " + entry[0]);
-            }
-            return file;
-        }));
-        return result;
+        return Arrays.stream(webAppConfigurations.split(","))
+                .map(propertyString -> propertyString.split("="))
+                .collect(Collectors.toMap(entry -> entry[0], entry -> new File(entry[1])));
     }
 
-    private List<WebScope> extractWebScopes() {
+    protected List<WebScope> extractWebScopes() {
         List<WebScope> splittedWebAppScopes;
         try {
             splittedWebAppScopes= this.webAppScopes != null ? Arrays.asList( this.webAppScopes.split(",")).stream().map(scope -> scope.trim().toUpperCase()).map(WebScope::valueOf).collect(toList()) : new ArrayList<>();
@@ -148,20 +164,20 @@ public class InstallModuleCommand extends SimpleCommand<SimpleResult<Boolean>> {
         this.projectName = projectName;
     }
 
-    public String getServiceConfigurations() {
-        return serviceConfigurations;
+    public String getServiceConfigurationsFiles() {
+        return serviceConfigurationsFiles;
     }
 
-    public void setServiceConfigurations(String serviceConfigurations) {
-        this.serviceConfigurations = serviceConfigurations;
+    public void setServiceConfigurationsFiles(String serviceConfigurationsFiles) {
+        this.serviceConfigurationsFiles = serviceConfigurationsFiles;
     }
 
-    public String getProjectAppConfiguration() {
-        return projectAppConfiguration;
+    public String getProjectAppConfigurationFile() {
+        return projectAppConfigurationFile;
     }
 
-    public void setProjectAppConfiguration(String projectAppConfiguration) {
-        this.projectAppConfiguration = projectAppConfiguration;
+    public void setProjectAppConfigurationFile(String projectAppConfigurationFile) {
+        this.projectAppConfigurationFile = projectAppConfigurationFile;
     }
 
     public String getWebAppScopes() {
@@ -172,11 +188,11 @@ public class InstallModuleCommand extends SimpleCommand<SimpleResult<Boolean>> {
         this.webAppScopes = webAppScopes;
     }
 
-    public String getWebAppConfigurations() {
-        return webAppConfigurations;
+    public String getWebAppConfigurationFiles() {
+        return webAppConfigurationFiles;
     }
 
-    public void setWebAppConfigurations(String webAppConfigurations) {
-        this.webAppConfigurations = webAppConfigurations;
+    public void setWebAppConfigurationFiles(String webAppConfigurationFiles) {
+        this.webAppConfigurationFiles = webAppConfigurationFiles;
     }
 }
