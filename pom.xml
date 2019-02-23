@@ -360,7 +360,7 @@
                 <groupId>de.espirit.firstspirit</groupId>
                 <artifactId>fs-server</artifactId>
                 <version>${firstspirit.version}</version>
-                <scope>runtime</scope>
+                <scope>provided</scope>
             </dependency>
             <dependency>
                 <groupId>de.espirit.firstspirit</groupId>
@@ -465,7 +465,7 @@
                 </property>
             </activation>
             <properties>
-                <firstspirit.version>5.2.181206</firstspirit.version>
+                <firstspirit.version>5.2.190210_78073</firstspirit.version>
             </properties>
         </profile>
         <profile>
