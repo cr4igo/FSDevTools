@@ -60,6 +60,16 @@ public enum CliConstants {
     DEFAULT_IMPORT_COMMENT("Imported by fs-cli"),
 
     /**
+     * Key http proxy host cli constant.
+     */
+    KEY_FS_HTTP_PROXYHOST("fshttpproxyhost"),
+
+    /**
+     * Key http proxy port cli constant.
+     */
+    KEY_FS_HTTP_PROXYPORT("fshttpproxyport"),
+
+    /**
      * Key fs host cli constant.
      */
     KEY_FS_HOST("fshost"),

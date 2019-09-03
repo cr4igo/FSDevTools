@@ -29,6 +29,7 @@ import com.espirit.moddev.cli.api.validation.Voilation;
 
 import de.espirit.firstspirit.access.Connection;
 import de.espirit.firstspirit.access.ConnectionManager;
+import de.espirit.firstspirit.access.Proxy;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,6 +76,14 @@ public class ConnectionBuilder {
             ConnectionManager.setUseHttps(true);
         } else {
             ConnectionManager.setUseHttps(false);
+        }
+
+        // if set: use proxy for http / https
+        if (!config.getHttpProxyHost().isEmpty()) {
+            if (config.getConnectionMode() == FsConnectionMode.HTTP || config.getConnectionMode() == FsConnectionMode.HTTPS) {
+                LOGGER.info("Using http proxy '{}:{}'", config.getHttpProxyHost(), config.getHttpProxyPort());
+                ConnectionManager.setProxy(new Proxy(config.getHttpProxyHost(), config.getHttpProxyPort()));
+            }
         }
 
         final String user = config.getUser();

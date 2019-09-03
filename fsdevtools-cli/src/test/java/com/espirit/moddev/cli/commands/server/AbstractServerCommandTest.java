@@ -22,15 +22,16 @@
 
 package com.espirit.moddev.cli.commands.server;
 
-import java.nio.file.Paths;
+import com.espirit.moddev.cli.api.FsConnectionMode;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
-import static org.junit.Assert.*;
 
-@Ignore("Ignored since it is a abstract class")
+import java.nio.file.Paths;
+
+import static org.junit.Assert.assertEquals;
+
 public abstract class AbstractServerCommandTest {
-    
+
     public AbstractServerCommandTest() {
     }
 
@@ -60,11 +61,10 @@ public abstract class AbstractServerCommandTest {
     public void testGetPort() {
         System.out.println("getPort");
         AbstractServerCommand instance = createTestling();
-        Integer expResult = 8000;
+        Integer expResult = FsConnectionMode.Constants.DEFAULT_HTTP_PORT;
         Integer result = instance.getPort();
         assertEquals(expResult, result);
     }
-
 
     @Test
     public void testGetPassword() {
@@ -76,6 +76,5 @@ public abstract class AbstractServerCommandTest {
     }
 
     protected abstract <T extends AbstractServerCommand> T createTestling();
-    
-    
+
 }

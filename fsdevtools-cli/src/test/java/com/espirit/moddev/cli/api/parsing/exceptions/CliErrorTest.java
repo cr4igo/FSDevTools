@@ -75,7 +75,17 @@ public class CliErrorTest {
 
             @Override
             public Integer getPort() {
-                return 8000;
+                return FsConnectionMode.Constants.DEFAULT_HTTP_PORT;
+            }
+
+            @Override
+            public String getHttpProxyHost() {
+                return "";
+            }
+
+            @Override
+            public Integer getHttpProxyPort() {
+                return 8080;
             }
 
             @Override
