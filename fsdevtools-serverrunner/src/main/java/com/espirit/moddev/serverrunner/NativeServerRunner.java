@@ -1,7 +1,6 @@
 package com.espirit.moddev.serverrunner;
 
-
-import de.espirit.common.VisibleForTesting;
+import com.espirit.moddev.shared.annotation.VisibleForTesting;
 import de.espirit.firstspirit.access.AdminService;
 import de.espirit.firstspirit.access.Connection;
 import de.espirit.firstspirit.access.ServicesBroker;
@@ -16,16 +15,37 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.net.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.InetAddress;
+import java.net.MalformedURLException;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -41,13 +61,14 @@ public class NativeServerRunner implements ServerRunner {
 
     private static final String PROBLEM_READING = "Problem reading data from FirstSpirit server process";
     private static final Logger LOGGER = LoggerFactory.getLogger(NativeServerRunner.class);
+    private static final Duration CONNECTION_RETRY_WAIT = Duration.ofMillis(500);
 
-    protected ServerProperties serverProperties;
+    protected final ServerProperties _serverProperties;
     /**
      * potentially contains the task that logs the FirstSpirit output (might not be filled in case we did not start the server ourselves)
      */
-    protected Optional<Future<Void>> serverTask = Optional.empty();
-    protected ExecutorService executor = Executors.newCachedThreadPool();
+    protected Optional<Future<Void>> _serverTask = Optional.empty();
+    protected final ExecutorService _executorService = Executors.newCachedThreadPool();
 
     /**
      * Creates and initializes the ServerRunner with given ServerProperties.
@@ -56,14 +77,14 @@ public class NativeServerRunner implements ServerRunner {
      * @throws NullPointerException
      */
     public NativeServerRunner(final ServerProperties serverProperties) {
-        this.serverProperties = Objects.requireNonNull(serverProperties);
+        _serverProperties = Objects.requireNonNull(serverProperties);
     }
 
     /**
      * Waits for a given condition, retrying if necessary, blocking the thread in between.
      *
      * @param condition the condition to be checked
-     * @param waitTime the time to wait between queries to `condition`
+     * @param waitTime  the time to wait between queries to `condition`
      * @param triesLeft the number of tries that should be used at max until the condition needs to be true. Should be larger than 0.
      * @return the value of the last call of `condition`.
      */
@@ -86,15 +107,16 @@ public class NativeServerRunner implements ServerRunner {
 
     /**
      * Updates a properties file with the properties given
-     * @param fileToUpdate the file that should be updated - may not exist, in that case `alternativeSource` is read
+     *
+     * @param fileToUpdate      the file that should be updated - may not exist, in that case `alternativeSource` is read
      * @param alternativeSource the source that should be read in case the file does not exist (e.g. an InputStream to a file from the resources)
-     * @param propertySetter side-effecting function to update the properties found in the file
+     * @param propertySetter    side-effecting function to update the properties found in the file
      */
     @VisibleForTesting
     static void updatePropertiesFile(Path fileToUpdate, InputStream alternativeSource, Consumer<Properties> propertySetter) throws IOException {
         try (BufferedReader reader = fileToUpdate.toFile().exists()
-                 ? Files.newBufferedReader(fileToUpdate)
-                 : new BufferedReader(new InputStreamReader(alternativeSource, StandardCharsets.UTF_8))) {
+                ? Files.newBufferedReader(fileToUpdate)
+                : new BufferedReader(new InputStreamReader(alternativeSource, StandardCharsets.UTF_8))) {
             final Properties properties = new Properties();
             properties.load(reader);
             propertySetter.accept(properties);
@@ -129,9 +151,9 @@ public class NativeServerRunner implements ServerRunner {
 
         Files.write(initFile, Collections.emptyList());
 
-        if (serverProperties.getLicenseFileSupplier().get().isPresent()) {
-            Files
-                .copy(serverProperties.getLicenseFileSupplier().get().get(), confDir.resolve("fs-license.conf"), StandardCopyOption.REPLACE_EXISTING);
+        final Optional<InputStream> inputStream = serverProperties.getLicenseFileSupplier().get();
+        if (inputStream.isPresent()) {
+            Files.copy(inputStream.get(), confDir.resolve("fs-license.conf"), StandardCopyOption.REPLACE_EXISTING);
         }
 
         //either update an existing conf file, or if none exists, use the one from the class path
@@ -144,11 +166,11 @@ public class NativeServerRunner implements ServerRunner {
         });
 
         Files.write(policyFile, Arrays.asList(
-            "/* policies for CMS-Server */",
-            "",
-            "grant {",
-            "  permission java.security.AllPermission;",
-            "};")); // basic file
+                "/* policies for CMS-Server */",
+                "",
+                "grant {",
+                "  permission java.security.AllPermission;",
+                "};")); // basic file
 
         return args;
     }
@@ -211,10 +233,13 @@ public class NativeServerRunner implements ServerRunner {
      */
     static boolean testConnection(final ServerProperties serverProperties) {
         switch (serverProperties.getMode()) {
-            case HTTP_MODE: return HttpConnectionTester.testConnection(serverProperties.getServerUrl());
-            case SOCKET_MODE: return SocketConnectionTester.testConnection(serverProperties.getServerHost(), serverProperties.getSocketPort(),
-                                                                           serverProperties.getServerAdminPw());
-            default: return false;
+            case HTTP_MODE:
+                return HttpConnectionTester.testConnection(serverProperties.getServerUrl());
+            case SOCKET_MODE:
+                return SocketConnectionTester.testConnection(serverProperties.getServerHost(), serverProperties.getSocketPort(),
+                        serverProperties.getServerAdminPw());
+            default:
+                return false;
         }
     }
 
@@ -222,7 +247,7 @@ public class NativeServerRunner implements ServerRunner {
      * Boots a FirstSpirit server, according to configuration
      *
      * @param serverProperties The server properties to be used
-     * @param executor The executor where tasks should be run on. Needs to supply at least 2 threads at the same time.
+     * @param executor         The executor where tasks should be run on. Needs to supply at least 2 threads at the same time.
      * @return a cancellable task that is already running
      * @throws java.io.IOException on file system access problems
      */
@@ -270,8 +295,8 @@ public class NativeServerRunner implements ServerRunner {
         }
 
         return getAllLocalAddresses().stream().anyMatch(
-            (localAddress) -> serverProperties.getServerHost().equals(localAddress.getHostAddress())
-            || serverProperties.getServerHost().equals(localAddress.getHostName()));
+                (localAddress) -> serverProperties.getServerHost().equals(localAddress.getHostAddress())
+                        || serverProperties.getServerHost().equals(localAddress.getHostName()));
     }
 
     private static List<InetAddress> getAllLocalAddresses() {
@@ -301,7 +326,7 @@ public class NativeServerRunner implements ServerRunner {
 
     @Override
     public boolean start() {
-        if (!testConnection(serverProperties)) {
+        if (!testConnection(_serverProperties)) {
             log.info("Starting FirstSpirit Server...");
 
             ServerStatus serverStatus = determineServerStatus();
@@ -323,13 +348,16 @@ public class NativeServerRunner implements ServerRunner {
         try {
             startFirstSpiritServerIfNotDoneYet();
 
-            ApiConnectionStatus apiConnectionStatus = waitForSuccessfulApiConnection(serverProperties.getRetryCount());
+            final Duration timeout = _serverProperties.getTimeout();
+            final long started = System.currentTimeMillis();
+            final boolean apiConnectionSuccessful = waitForSuccessfulApiConnection(timeout);
+            final Duration remainingTimeout = timeout.minusMillis(System.currentTimeMillis() - started);
 
             boolean serverRunLevelIsStarted = false;
-            if(apiConnectionStatus.apiConnectionSuccessful) {
-                serverRunLevelIsStarted = connectAndWaitForRunLevelStarted(serverProperties.getRetryCount());
+            if (apiConnectionSuccessful) {
+                serverRunLevelIsStarted = connectAndWaitForRunLevelStarted(remainingTimeout);
             }
-            serverStatus = new ServerStatus(apiConnectionStatus.apiConnectionSuccessful, serverRunLevelIsStarted);
+            serverStatus = new ServerStatus(apiConnectionSuccessful, serverRunLevelIsStarted);
         } catch (final IOException ioe) {
 //            This information is not useful for most cases, so we shouldn't log this in error.
             log.debug(PROBLEM_READING, ioe);
@@ -337,20 +365,21 @@ public class NativeServerRunner implements ServerRunner {
         return serverStatus;
     }
 
-    private boolean connectAndWaitForRunLevelStarted(int remainingRetryCount) {
-        Optional<Connection> optionalConnection = serverProperties.tryOpenAdminConnection();
-        boolean runLevelIsStarted = optionalConnection.map((Connection connectionParam) -> {
+    private boolean connectAndWaitForRunLevelStarted(final Duration timeout) {
+        Optional<Connection> optionalConnection = _serverProperties.tryOpenAdminConnection();
+        return optionalConnection.map((Connection connectionParam) -> {
             try (Connection connection = connectionParam) {
-                RunLevelAgent runLevelAgent = connection.getBroker().requireSpecialist(RunLevelAgent.TYPE);
-                return waitForRunLevelStarted(runLevelAgent, remainingRetryCount); //retry count means we try one more time
+                final RunLevelAgent runLevelAgent = connection.getBroker().requireSpecialist(RunLevelAgent.TYPE);
+                runLevelAgent.waitForRunLevel(RunLevel.STARTED, timeout);
+                return true;
+            } catch (TimeoutException e) {
+                log.error("FirstSpirit server could not be started within configured timeout of " + _serverProperties.getTimeout() + ".", e);
             } catch (IOException e) {
 //                This information is not useful for most cases, so we shouldn't log this in error.
                 log.debug("Not able to close connection properly...", e);
-                return false;
             }
+            return false;
         }).orElse(false);
-
-        return runLevelIsStarted;
     }
 
     private void logOptionalErrorState(ServerStatus serverStatus) {
@@ -362,41 +391,25 @@ public class NativeServerRunner implements ServerRunner {
         }
     }
 
-    private boolean waitForRunLevelStarted(RunLevelAgent runLevelAgent, int startRetryCount) {
-        AtomicInteger remainingRetryCount = new AtomicInteger(startRetryCount);
+    private boolean waitForSuccessfulApiConnection(final Duration timeout) {
+        final int retryCount = (int) (timeout.toMillis() / CONNECTION_RETRY_WAIT.toMillis());
 
-        boolean runLevelIsStarted = waitForCondition(() -> {
-            log.info("Trying to retrieve run level status from FirstSpirit server...");
-            RunLevel currentRunLevel = runLevelAgent.getRunLevel();
-            log.info("Current run level status is " + currentRunLevel.name());
-
-            return currentRunLevel == RunLevel.STARTED;
-        }, serverProperties.getRetryWait(), remainingRetryCount.getAndIncrement());
-
-        return runLevelIsStarted;
-    }
-
-    private ApiConnectionStatus waitForSuccessfulApiConnection(int startRetryCount) {
-        AtomicInteger remainingRetryCount = new AtomicInteger(startRetryCount);
-
-        boolean apiConnectionSuccessful = waitForCondition(() -> {
-            log.info("Trying to establish FirstSpirit server connection...");
-            remainingRetryCount.getAndDecrement();
-            return testConnection(serverProperties);
-        }, serverProperties.getRetryWait(), remainingRetryCount.getAndIncrement());
-
-        return new ApiConnectionStatus(apiConnectionSuccessful, remainingRetryCount.get());
+        return waitForCondition(() -> {
+            final int port = _serverProperties.getMode() == ServerProperties.ConnectionMode.SOCKET_MODE ? _serverProperties.getSocketPort() : _serverProperties.getHttpPort();
+            log.info("Trying to establish FirstSpirit server connection... " + _serverProperties.getServerHost() + ":" + port + "(" + _serverProperties.getMode() + ")");
+            return testConnection(_serverProperties);
+        }, CONNECTION_RETRY_WAIT, retryCount);
     }
 
     private void startFirstSpiritServerIfNotDoneYet() throws IOException {
-        if (!serverTask.isPresent()) {
-            serverTask = Optional.of(startFirstSpiritServer(serverProperties, executor));
+        if (!_serverTask.isPresent()) {
+            _serverTask = Optional.of(startFirstSpiritServer(_serverProperties, _executorService));
         }
     }
 
     @Override
     public boolean isRunning() {
-        Optional<Connection> optionalConnection = serverProperties.tryOpenAdminConnection();
+        Optional<Connection> optionalConnection = _serverProperties.tryOpenAdminConnection();
         return optionalConnection.map((Connection connection) -> {
             RunLevel runLevel = connection.getBroker().requireSpecialist(RunLevelAgent.TYPE).getRunLevel();
             closeConnectionAndDebugLogErrors(connection);
@@ -416,18 +429,23 @@ public class NativeServerRunner implements ServerRunner {
     @Override
     public boolean stop() {
         log.info("Stopping FirstSpirit Server...");
-        Connection connection = serverProperties.tryOpenAdminConnection()
-                .orElseThrow(() -> new IllegalStateException("Stopping the FirstSpirit server failed, due to a connection failure."));
-
-        stopFirstSpiritServerAndDisconnect(connection);
-        ensureFsLockFileIsRemoved(serverProperties);
+        final Optional<Connection> connection = _serverProperties.tryOpenAdminConnection();
+        if (connection.isPresent()) {
+            log.info("Stopping server...");
+            stopFirstSpiritServerAndDisconnect(connection.get());
+            log.info("Stopping server...");
+            ensureFsLockFileIsRemoved(_serverProperties);
+        } else {
+            log.warn("Connection to server failed, trying to kill the process");
+        }
+        // finally kill the process
         killRunningProcess();
-        return !testConnection(serverProperties);
+        return !testConnection(_serverProperties);
     }
 
     private void stopFirstSpiritServerAndDisconnect(final Connection connection) {
-        ServicesBroker servicesBroker = connection.getBroker().requireSpecialist(ServicesBroker.TYPE);
-        AdminService adminService = servicesBroker.getService(AdminService.class);
+        final ServicesBroker servicesBroker = connection.getBroker().requireSpecialist(ServicesBroker.TYPE);
+        final AdminService adminService = servicesBroker.getService(AdminService.class);
         adminService.stopServer();
         closeConnectionAndDebugLogErrors(connection);
     }
@@ -436,9 +454,10 @@ public class NativeServerRunner implements ServerRunner {
         // indicates that the server is still running if the lock file is still there
 
         if (isServerLocal(serverProperties)) {
-            waitForCondition(() -> !serverProperties.getLockFile().exists(), serverProperties.getRetryWait(), serverProperties.getRetryCount());
+            final int retryCount = (int) (serverProperties.getTimeout().toMillis() / CONNECTION_RETRY_WAIT.toMillis());
+            waitForCondition(() -> !serverProperties.getLockFile().exists(), CONNECTION_RETRY_WAIT, retryCount);
         } else {
-            log.warn("WARNING: ", "Server is not local! After stopping it the server may still be running for some time.");
+            log.warn("Server is not local! After stopping it the server may still be running for some time.");
         }
         try {
             Thread.sleep(500);
@@ -448,22 +467,14 @@ public class NativeServerRunner implements ServerRunner {
     }
 
     private void killRunningProcess() {
-        serverTask.ifPresent(x -> x.cancel(true));
-    }
-
-    @Data
-    @Setter(AccessLevel.NONE)
-    @AllArgsConstructor
-    private static class ApiConnectionStatus {
-        private boolean apiConnectionSuccessful = false;
-        private int remainingRetryCount;
+        _serverTask.ifPresent(x -> x.cancel(true));
     }
 
     @Data
     @Setter(AccessLevel.NONE)
     @AllArgsConstructor
     private static class ServerStatus {
-        private boolean apiConnectionSuccessful = false;
-        private boolean serverRunning = false;
+        private boolean apiConnectionSuccessful;
+        private boolean serverRunning;
     }
 }
